@@ -1,22 +1,22 @@
 # Blog Writer Multi-Agent System
 
-A multi-agent system for automatically generating blog posts using AI agents with CrewAI.
+A sophisticated multi-agent system for automatically generating SEO-optimized blog posts using AI agents with CrewAI.
 
 ## Overview
 
-This system uses multiple AI agents to collaborate on creating blog posts:
+This system uses multiple specialized AI agents to collaborate on creating professional blog posts:
 
-1. **Content Planner**: Researches the topic and creates a detailed outline
-2. **Content Writer**: Writes the blog post based on the planner's outline
-3. **Editor**: Reviews and improves the final blog post
-4. **Banner Image Designer**: Creates a banner image for the blog post using DALL-E 3
+1. **Content Planner**: Researches the topic, identifies target audience, and creates a detailed outline with SEO keywords
+2. **Content Writer**: Writes an engaging blog post based on the planner's outline and SEO strategy
+3. **Editor**: Reviews and improves the final blog post for grammar, style, and brand alignment
+4. **Banner Image Designer**: Creates a custom banner image prompt for DALL-E 3 featuring Artilence branding
 
 ## How to Start
 
 ### Prerequisites
 
 - Python 3.10+
-- OpenAI API key (for generation and images)
+- OpenAI API key (for content generation and images)
 - Google API key (optional, for Gemini model)
 - Serper Dev API key (for search tools)
 
@@ -39,29 +39,44 @@ This system uses multiple AI agents to collaborate on creating blog posts:
 Run the blog writer with a topic:
 
 ```bash
-python main.py --topic "Artificial Intelligence in Healthcare"
+python tools/main.py --topic "Artificial Intelligence in Healthcare"
 ```
 
 Additional options:
-- `--output`: Specify the output file (default: topic name with underscores)
+- `--output`: Specify the output file path (default: topic name with underscores)
 - `--custom-llm`: Use Google's Gemini model instead of GPT
 - `--no-image`: Skip banner image generation
 
 ## Tools and Technologies
 
-- **CrewAI**: Multi-agent framework for AI collaboration
-- **LangChain**: Framework for working with language models
-- **OpenAI**: GPT models for text generation and DALL-E 3 for image generation
+- **CrewAI**: Framework for organizing AI agents into collaborative crews
+- **LangChain**: Tools for connecting language models with external data sources
+- **OpenAI GPT-3.5/4**: Primary language models for text generation
 - **Google Gemini** (optional): Alternative LLM for text generation
+- **DALL-E 3**: Image generation for blog post banners
+- **SerperDev**: Search tool for agent research capabilities
 
 ## Configuration
 
 The system uses YAML files for configuration:
-- `config/agents.yaml`: Defines the roles and goals of agents
-- `config/tasks.yaml`: Defines the tasks for each agent
+- `config/agents.yaml`: Defines each agent's role, goal, and backstory
+- `config/tasks.yaml`: Specifies detailed task descriptions and expected outputs
 
 ## Output
 
-- Blog post in markdown format
-- Banner image (optional)
-- Planner's outline stored in `planner_output.md` 
+The system generates:
+- Complete blog post in markdown format
+- SEO-optimized content with proper structure
+- Custom banner image with Artilence branding (#04C996, black, and white)
+- Intermediate files:
+  - `planner_output.md`: Content plan and outline
+  - `writer_output.md`: Initial draft
+  - `final_blog_post.md`: Edited final version with image
+
+## Architecture
+
+The `BlogWriter` class orchestrates the entire process:
+1. Initializes agents with appropriate models and tools
+2. Executes tasks in sequence (planning → writing → editing → designing)
+3. Generates banner image using DALL-E 3 with custom prompt
+4. Saves final blog post with embedded image reference 
