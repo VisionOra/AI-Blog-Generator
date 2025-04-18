@@ -1,0 +1,35 @@
+# Environment variables
+.env
+
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# Generated blog files
+blog_images/
+*_blog.md
+
+# IDE files
+.vscode/
+.idea/
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+exampro_env/
+crewai+scrapgraph.ipynb
+# client/
+api/
+.codegpt
