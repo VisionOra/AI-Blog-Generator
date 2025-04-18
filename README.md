@@ -1,4 +1,5 @@
 # AI Blog Generator
+A good Tutorial for this is [here](https://www.youtube.com/watch?v=dNpKQk5uxHw&list=PLpkzjZ2JCjKJMmSRr3sXn22HoFW3lBFPE)
 
 A multi-agent system for automated blog content creation leveraging CrewAI and large language models.
 
