@@ -8,6 +8,7 @@ import os
 import requests
 from datetime import datetime
 from dotenv import load_dotenv
+from typing import Optional # Restore Optional if needed for type hints
 
 # Load environment variables
 load_dotenv()
@@ -70,32 +71,27 @@ def generate_image(prompt, size="1024x1024", output_dir="blog_images"):
 
 @CrewBase
 class BlogWriter:
-    """A crew for writing blog posts with a multi-agent approach"""
-    
-    def __init__(self, use_custom_llm=False, generate_banner_image=True, topic=None):
+    """A crew for writing blog posts with a multi-agent approach"""        
+    def __init__(self, use_custom_llm=False, topic=None, keywords=None):
+        # This __init__ handles arguments passed during instantiation.
+        # It initializes necessary attributes.
         self.use_custom_llm = use_custom_llm
-        self.generate_banner_image = generate_banner_image
         self.topic = topic
-        self.search_tool = SerperDevTool()
-        self.image_prompt = None
+        self.keywords = keywords # Store keywords
         self.blog_content = None
+        self.search_tool = SerperDevTool()
         
+        # Initialize LLM based on use_custom_llm flag
         if use_custom_llm:
             gemini_api_key = os.getenv("GOOGLE_API_KEY")
-            if not gemini_api_key:
-                raise ValueError("GOOGLE_API_KEY not found in environment variables")
-            
-            self.llm = ChatGoogleGenerativeAI(
-                model="gemini-2.5-pro-preview-03-25",
-                google_api_key=gemini_api_key,
-                temperature=0.7,
-            )
+            if not gemini_api_key: raise ValueError("GOOGLE_API_KEY not found")
+            self.llm = ChatGoogleGenerativeAI(model="gemini-pro", google_api_key=gemini_api_key, temperature=0.7)
         else:
-            self.llm = ChatOpenAI(
-                model="gpt-3.5-turbo",
-                temperature=0.7
-            )
-    
+            self.llm = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.7)
+        
+        # --- DO NOT CALL super().__init__() here --- 
+        # To avoid potential recursion issues observed previously.
+        
     @agent
     def planner(self):
         return Agent(
@@ -131,8 +127,24 @@ class BlogWriter:
     
     @task
     def planning_task(self):
+        # Base description
+        task_description = f"""Create a comprehensive outline and research plan for a blog post on the topic: {self.topic}.
+Provide a detailed structure including main sections, sub-points, and key information to cover.
+Identify target audience and suggest a suitable tone.
+The final output should be a structured plan that the writer can easily follow."""
+        
+        # Add keywords to description if they exist for this instance
+        if self.keywords:
+            task_description += f"\n\nIncorporate the following keywords naturally into the research and outline: {self.keywords}"
+
+        # Load base config for the task if available, otherwise empty dict
+        task_config = self.tasks_config.get("planning_task", {}).copy()
+        # Override description and expected_output in the config for this specific run
+        task_config['description'] = task_description
+        task_config['expected_output'] = "A detailed blog post outline and research plan, potentially guided by keywords." # Updated expected output
+        
         return Task(
-            config=self.tasks_config["planning_task"],
+            config=task_config, # Use the modified config
             agent=self.planner()
         )
     
@@ -159,191 +171,102 @@ class BlogWriter:
     
     @crew
     def crew(self):
-        agents = [self.planner(), self.writer(), self.editor()]
-        tasks = [self.planning_task(), self.writing_task(), self.editing_task()]
+        # print("--- BlogWriter: crew() method called ---") # Diagnostic
+        # This crew MUST be for text-only blog generation
+        agents_for_blog = [self.planner(), self.writer(), self.editor()]
+        tasks_for_blog = [self.planning_task(), self.writing_task(), self.editing_task()]
         
-        if self.generate_banner_image:
-            agents.append(self.designer())
-            tasks.append(self.designing_task())
+        # Remove conditional image generation logic
+        # if self.generate_banner_image:
+        #     # This block should not exist as image generation is removed from this crew
+        #     pass # Or raise an error if this path is somehow reached
+
+        # print(f"--- BlogWriter: Planner verbose: {agents_for_blog[0].verbose} ---")
+        # print(f"--- BlogWriter: Writer verbose: {agents_for_blog[1].verbose} ---")
+        # print(f"--- BlogWriter: Editor verbose: {agents_for_blog[2].verbose} ---")
+
+        blog_crew = Crew(
+            agents=agents_for_blog, 
+            tasks=tasks_for_blog, 
+            verbose=True 
+            )
         
-        return Crew(
-            agents=agents,
-            tasks=tasks,
-            verbose=True
-        )
+        # print(f"--- BlogWriter: Crew verbose: {blog_crew.verbose} ---") # Diagnostic
+        return blog_crew
     
-    def generate_blog(self, topic=None):
-        """Generate a blog post on the specified topic"""
-        if topic:
-            self.topic = topic
+    def generate_blog(self, topic=None, keywords=None):
+        # This method generates and returns ONLY the text content of the blog.
+        print(f"--- BlogWriter: generate_blog() called for topic: {topic} ---") # Diagnostic
+        if topic: self.topic = topic
         
-        # Generate the blog content
-        result = self.crew().kickoff(inputs={"topic": self.topic})
+        # Print LLM and Tool status before kickoff
+        print(f"--- BlogWriter: LLM object: {self.llm} ---")
+        print(f"--- BlogWriter: Search Tool object: {self.search_tool} ---")
+        
+        print(f"--- BlogWriter: About to kickoff crew for topic: {self.topic} --- Keywords: {self.keywords} ---") # Diagnostic
+        try:
+            # The crew is already configured to be text-only (planner, writer, editor)
+            result = self.crew().kickoff(inputs={"topic": self.topic})
+            print(f"--- BlogWriter: Crew kickoff finished. Result type: {type(result)} ---") # Diagnostic
+        except Exception as e:
+            print(f"--- BlogWriter: ERROR during crew kickoff: {e} ---") # Diagnostic
+            raise # Re-raise the exception to be caught by the calling view
+            
         blog_content_raw = str(result)
         
-        # Check if the result looks like an image prompt rather than a blog post
-        # Common indicators of image prompts rather than actual blog content
-        image_prompt_indicators = [
-            "image prompt:",
-            "banner image",
-            "for the banner image",
-            "image should depict",
-            "color palette should",
-            "composition should",
-            "style of the image",
-            "lighting should be",
-            "the background should",
-            "artilence branding",
-            "#04c996",
-        ]
+        # --- Simplified Content Processing --- 
+        # Assume the result from kickoff is the primary content. 
+        # Remove all logic related to image prompt detection and splitting.
         
-        # Extract the actual blog content from the planner, writer, and editor agents
+        self.blog_content = blog_content_raw.strip()
+        
+        # Extract content directly from agents (this existing logic can stay as a fallback/refinement)
         actual_blog_content = None
         try:
-            # First try to get final blog directly from editor output
-            for task in self.crew().tasks:
-                if hasattr(task, 'agent') and hasattr(task.agent, 'role') and task.agent.role.lower() == "editor":
-                    if hasattr(task, 'output') and task.output:
-                        editor_content = str(task.output)
-                        # Check if editor output looks like a proper blog post (has a title and paragraphs)
-                        if "# " in editor_content and len(editor_content) > 500:
-                            actual_blog_content = editor_content
-                            break
-            
-            # If we couldn't get editor content, try the writer
+            for task_instance in self.crew().tasks:
+                if hasattr(task_instance, 'agent') and hasattr(task_instance.agent, 'role') and task_instance.agent.role.lower() == "editor":
+                    if hasattr(task_instance, 'output') and task_instance.output: 
+                        editor_content = str(task_instance.output)
+                        if "# " in editor_content and len(editor_content) > 100: actual_blog_content = editor_content; break 
             if not actual_blog_content:
-                for task in self.crew().tasks:
-                    if hasattr(task, 'agent') and hasattr(task.agent, 'role') and task.agent.role.lower() == "writer":
-                        if hasattr(task, 'output') and task.output:
-                            writer_content = str(task.output)
-                            # Check if writer output looks like a proper blog post (has a title and paragraphs)
-                            if "# " in writer_content and len(writer_content) > 500:
-                                actual_blog_content = writer_content
-                                break
-        except Exception as e:
-            print(f"Error extracting content directly from agents: {e}")
+                for task_instance in self.crew().tasks:
+                    if hasattr(task_instance, 'agent') and hasattr(task_instance.agent, 'role') and task_instance.agent.role.lower() == "writer":
+                        if hasattr(task_instance, 'output') and task_instance.output:
+                            writer_content = str(task_instance.output)
+                            if "# " in writer_content and len(writer_content) > 100: actual_blog_content = writer_content; break
+        except Exception as e: print(f"Error extracting content directly from agents: {e}")
         
-        # If we got actual blog content from an agent, use it instead of the raw result
         if actual_blog_content:
-            print("Using blog content directly from editor/writer agent")
-            blog_content_raw = actual_blog_content
-        
-        # Process the blog content to extract only the actual blog
-        lines = blog_content_raw.split('\n')
-        blog_content_lines = []
-        image_prompt_lines = []
-        in_image_prompt = False
-        skip_line = False
-        
-        # First, let's check if the raw content is primarily an image prompt
-        # by counting how many image prompt indicators it contains
-        indicators_found = sum(1 for indicator in image_prompt_indicators if indicator in blog_content_raw.lower())
-        content_is_mostly_prompt = indicators_found >= 3 and '# ' not in blog_content_raw[:500]
-        
-        if content_is_mostly_prompt:
-            # Likely not a proper blog at all - we'll need to generate content
-            print("Warning: Output appears to be primarily image prompt text rather than blog content.")
-            # Save the image prompt text
-            self.image_prompt = blog_content_raw
-            # Generate a proper blog post structure
-            self.blog_content = self._generate_fallback_blog_content(topic)
-            return self.blog_content, None  # No image path since we already have the prompt
-        
-        # Process line by line to extract blog content and image prompt
-        for i, line in enumerate(lines):
-            # Check for image prompt markers
-            if "image prompt:" in line.lower() or "banner image:" in line.lower():
-                in_image_prompt = True
-                image_prompt_lines.append(line.replace("Image Prompt:", "").replace("Banner Image:", "").strip())
-                skip_line = True
-                continue
-                
-            # Check if this line is the start of an image description
-            if i > 0 and not in_image_prompt:
-                for indicator in image_prompt_indicators:
-                    if indicator in line.lower():
-                        # If the line contains multiple indicators, it's likely describing an image
-                        indicators_in_line = sum(1 for ind in image_prompt_indicators if ind in line.lower())
-                        if indicators_in_line >= 2:
-                            in_image_prompt = True
-                            image_prompt_lines.append(line)
-                            skip_line = True
-                            break
-                        # Special case for "for the banner image" which is a strong indicator
-                        elif "for the banner image" in line.lower():
-                            in_image_prompt = True
-                            image_prompt_lines.append(line)
-                            skip_line = True
-                            break
-            
-            # Check if we're transitioning from image prompt back to blog content
-            if in_image_prompt and (line.startswith("# ") or line.startswith("## ")):
-                in_image_prompt = False
-                skip_line = False
-                
-            # Process the line
-            if in_image_prompt:
-                if not skip_line:  # Don't add the prompt marker line twice
-                    image_prompt_lines.append(line)
-            else:
-                blog_content_lines.append(line)
-            
-            # Reset skip_line
-            skip_line = False
-        
-        # Process result to extract image prompt if it's mixed in with the blog content
-        self.blog_content = "\n".join(blog_content_lines).strip()
-        self.image_prompt = "\n".join(image_prompt_lines).strip()
-        
-        # Check if we ended up with valid blog content
-        if len(self.blog_content) < 200 or '# ' not in self.blog_content:
+            print("Using blog content directly from editor/writer agent output.")
+            self.blog_content = actual_blog_content.strip()
+        else:
+            print("Using the full kickoff result as blog content.")
+            # self.blog_content is already set from blog_content_raw above
+
+        # --- End Simplified Content Processing --- 
+
+        # Fallback and formatting logic (remains unchanged)
+        if len(self.blog_content) < 100 or ('# ' not in self.blog_content and '## ' not in self.blog_content) :
             print("Warning: Extracted blog content appears invalid or too short. Generating fallback content.")
-            self.blog_content = self._generate_fallback_blog_content(topic)
-        
-        # Ensure the blog has a proper title
-        if self.blog_content and not self.blog_content.startswith("# "):
-            self.blog_content = f"# {self.topic}\n\n{self.blog_content}"
-            
-        # Ensure the content is properly formatted with sections if very long
-        if self.blog_content and "##" not in self.blog_content and len(self.blog_content) > 1000:
-            # Add some basic headings if none exist
+            self.blog_content = self._generate_fallback_blog_content(self.topic if self.topic else "Fallback Topic")
+        if self.blog_content and not self.blog_content.startswith("# ") and not self.blog_content.startswith("## "):
+            self.blog_content = f"# {self.topic if self.topic else 'Fallback Title'}\n\n{self.blog_content}"
+        if self.blog_content and "##" not in self.blog_content and len(self.blog_content) > 800: 
             sections = ["Introduction", "Key Points", "Conclusion"]
             paragraphs = [p for p in self.blog_content.split("\n\n") if p.strip()]
-            
-            if len(paragraphs) >= 4:  # Title + at least 3 paragraphs
-                # Only add headings if we have enough paragraphs to work with
-                formatted_content = [paragraphs[0]]  # Title/first paragraph
-                
-                # Add Introduction section
-                formatted_content.append(f"\n## {sections[0]}\n")
-                formatted_content.append(paragraphs[1])
-                
-                # Add middle sections - Key Points
-                formatted_content.append(f"\n## {sections[1]}\n")
-                # Add middle paragraphs (all except first and last)
-                for p in paragraphs[2:-1]:
-                    formatted_content.append(p)
-                
-                # Add conclusion
-                formatted_content.append(f"\n## {sections[2]}\n")
-                formatted_content.append(paragraphs[-1])
-                
+            if len(paragraphs) >= 3:
+                formatted_content = [paragraphs[0]] 
+                formatted_content.append(f"\n## {sections[0]}\n"); formatted_content.append(paragraphs[1])
+                if len(paragraphs) > 2:
+                    formatted_content.append(f"\n## {sections[1]}\n")
+                    for p_content in paragraphs[2:-1]: formatted_content.append(p_content)
+                    formatted_content.append(f"\n## {sections[2]}\n"); formatted_content.append(paragraphs[-1])
+                else: 
+                    formatted_content.append(f"\n## {sections[2]}\n"); formatted_content.append(paragraphs[-1])
                 self.blog_content = "\n\n".join(formatted_content)
         
-        # If no valid image prompt was found, generate a generic one
-        if not self.image_prompt or len(self.image_prompt) < 50:
-            self.image_prompt = f"Create a professional, visually appealing banner image for a blog post about {topic}. The image should use vibrant colors including Artilence's main color #04C996, along with black and white accents. It should be modern, clean, and conceptually represent the topic in an engaging way."
-        
-        # Determine image output directory, defaulting if not set by save_blog_to_file
-        image_dir_to_use = getattr(self, '_current_image_dir', "blog_images")
-
-        # Generate an image if requested
-        if self.generate_banner_image:
-            # Generate the image with the extracted or generated prompt
-            image_path = self.generate_banner_image_with_prompt(self.image_prompt, image_output_dir=image_dir_to_use)
-            return self.blog_content, image_path
-        
-        return self.blog_content, None
+        # Ensure only the final string content is returned
+        return self.blog_content 
         
     def _generate_fallback_blog_content(self, topic):
         """Generate a fallback blog post structure if the main generation failed"""
@@ -404,68 +327,27 @@ class BlogWriter:
         return generate_image(prompt, size="1792x1024", output_dir=image_output_dir)
     
     def save_blog_to_file(self, topic=None, output_file_name=None, base_output_dir=None):
-        """Generate a blog post and save it to a file within a specific base directory."""
-        
+        """Generate a blog post (text only) and save it to a file.
+           This method MUST ONLY return the file path of the saved markdown blog post (a string).
+        """
         effective_topic = topic if topic else self.topic
-        if not effective_topic:
-            raise ValueError("Topic must be provided either at initialization or when calling save_blog_to_file.")
-
-        # Store the current topic for potential use in fallback image prompts
+        if not effective_topic: raise ValueError("Topic must be provided for save_blog_to_file.")
         BlogWriter._current_topic = effective_topic
-            
-        # Sanitize topic to create a valid directory name
-        # Replace spaces with underscores, remove characters not suitable for filenames/paths
         topic_slug = effective_topic.lower().replace(' ', '_')
         topic_slug = "".join(c for c in topic_slug if c.isalnum() or c in ('_', '-')).rstrip()
-        if not topic_slug: # handle cases where topic might become empty after sanitization
-            topic_slug = "untitled_blog"
-
-        if base_output_dir:
-            # All outputs for this specific blog post will go into a subfolder named after the topic slug
-            current_blog_instance_dir = os.path.join(base_output_dir, topic_slug)
-        else:
-            # Default behavior: save in a subfolder (named by topic_slug) in the current working directory
-            current_blog_instance_dir = os.path.join(os.getcwd(), topic_slug)
-        
+        if not topic_slug: topic_slug = "untitled_blog"
+        current_blog_instance_dir = os.path.join(base_output_dir if base_output_dir else os.getcwd(), topic_slug)
         os.makedirs(current_blog_instance_dir, exist_ok=True)
         
-        # Define image output directory within the current blog's instance directory
-        image_specific_output_dir = os.path.join(current_blog_instance_dir, "blog_images")
-        os.makedirs(image_specific_output_dir, exist_ok=True)
+        # Generate TEXT blog content ONLY
+        blog_text_content = self.generate_blog(effective_topic) 
 
-        # Set the image directory for generate_blog to use
-        self._current_image_dir = image_specific_output_dir
-        
-        try:
-            result, image_path = self.generate_blog(effective_topic)
-        finally:
-            # Clean up the temporary attribute
-            if hasattr(self, '_current_image_dir'):
-                del self._current_image_dir
-
-        if output_file_name is None:
-            # Default filename if not provided
+        if output_file_name is None: 
             output_file_name = f"{topic_slug}_blog.md"
         
-        # final_output_file_path is the full path to the markdown file
         final_output_file_path = os.path.join(current_blog_instance_dir, output_file_name)
 
         with open(final_output_file_path, 'w', encoding='utf-8') as f:
-            f.write(result)
+            f.write(blog_text_content)
         
-        # Append image reference to the blog post if an image was successfully generated
-        if image_path: # image_path from generate_image is absolute
-            markdown_dir = os.path.dirname(final_output_file_path)
-            # Make image_path relative to the markdown file for the link in the markdown
-            relative_image_path_for_markdown = os.path.relpath(image_path, start=markdown_dir)
-            
-            with open(final_output_file_path, 'r+', encoding='utf-8') as f:
-                content = f.read()
-                f.seek(0, 0)
-                # Use a platform-agnostic path for the markdown link
-                md_image_link = relative_image_path_for_markdown.replace(os.sep, '/')
-                f.write(f"![Banner Image for {effective_topic}]({md_image_link})\n\n{content}")
-            
-            print(f"Added image reference to blog post: {md_image_link}")
-        
-        return final_output_file_path, image_path # image_path is still absolute here 
+        return final_output_file_path 
