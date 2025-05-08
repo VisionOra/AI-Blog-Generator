@@ -135,4 +135,61 @@ SPECTACULAR_SETTINGS = {
         'tryItOutEnabled': True,
     },
     'COMPONENT_SPLIT_REQUEST': True,
+}
+
+# Logging Configuration for Development
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False, 
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            # Set console handler level to DEBUG so it CAN show debug messages if a logger allows them
+            'level': 'DEBUG', 
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        # Set root level higher (e.g., INFO) to avoid DEBUG from all libraries
+        'level': 'INFO', 
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': os.getenv('DJANGO_LOG_LEVEL', 'INFO'), 
+            'propagate': False,
+        },
+        'crewai': { # Keep CrewAI logs verbose if desired
+            'handlers': ['console'],
+            'level': 'DEBUG', # Allow DEBUG level from crewai specifically
+            'propagate': False, # Prevent crewai DEBUG messages from going to root logger if root is INFO
+        },
+        'httpcore': { # Silence DEBUG messages from httpcore
+            'handlers': ['console'],
+            'level': 'INFO', 
+            'propagate': False,
+        },
+         'httpx': { # Silence DEBUG messages from httpx (often used with httpcore)
+            'handlers': ['console'],
+            'level': 'INFO', 
+            'propagate': False,
+        },
+         'litellm': { # Set LiteLLM's default to INFO unless DEBUG is needed
+            'handlers': ['console'],
+            'level': 'INFO', 
+            'propagate': False,
+        },
+        # Add other specific loggers here if needed
+    }
 } 
