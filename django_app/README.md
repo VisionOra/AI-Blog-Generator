@@ -1,0 +1,224 @@
+# AI Blog Generator - Django Application
+
+This directory contains the Django web application implementation of the AI Blog Generator system. The application provides a RESTful API for generating blog posts, LinkedIn content, weekly AI news, and images - all stored in a PostgreSQL database.
+
+## Directory Structure
+
+```
+django_app/
+├── api/                    # API application
+│   ├── migrations/         # Database migration files
+│   ├── models.py           # Database models
+│   ├── serializers.py      # API request/response serializers
+│   ├── views.py            # API endpoints implementation
+│   └── urls.py             # API routing
+│
+├── app/                    # Main Django project settings
+│   ├── settings.py         # Project configuration
+│   ├── urls.py             # Main URL routing
+│   └── wsgi.py             # WSGI configuration
+│
+├── services/               # Application services
+│   └── linkedin_post_generator.py # LinkedIn post generation service
+│
+├── generated_blogs/        # Output directory for generated content
+│   └── api_generated_images/ # Generated images storage
+│
+├── manage.py               # Django management command
+└── .env                    # Environment variables (create this file)
+```
+
+## Database Models
+
+The application uses PostgreSQL to store all generated content:
+
+1. **BlogGeneral** - Stores generated blog posts
+   - `user_id` - User identifier
+   - `topic` - Blog topic
+   - `content` - Full blog content
+   - `created_at` - Timestamp
+
+2. **BlogAiNews** - Stores weekly AI news summaries
+   - `news_week_start` - Start date of the news week
+   - `summary` - Short summary
+   - `content` - Full news content
+   - `created_at` - Timestamp
+
+3. **LinkedinPost** - Stores LinkedIn posts
+   - `user_id` - User identifier
+   - `topic` - Post topic
+   - `content` - Full post content
+   - `created_at` - Timestamp
+
+4. **ImageGeneration** - Stores generated images
+   - `user_id` - User identifier
+   - `prompt` - Image generation prompt
+   - `image_url` - Path to generated image
+   - `created_at` - Timestamp
+
+## Setup Instructions
+
+### Prerequisites
+
+- Python 3.10+
+- PostgreSQL database
+- OpenAI API key
+- SerperDev API key
+- Google API key (optional, for Gemini)
+
+### Installation
+
+1. Install required dependencies:
+
+```bash
+pip install django djangorestframework psycopg2-binary python-dotenv drf-spectacular
+pip install openai requests crewai crewai-tools langchain-google-genai langchain-openai
+```
+
+2. Create a `.env` file in the project root with the following configuration:
+
+```
+# API Keys
+OPENAI_API_KEY=your_openai_api_key
+SERPER_API_KEY=your_serper_api_key
+GOOGLE_API_KEY=your_google_api_key
+
+# Database Configuration
+DB_ENGINE=django.db.backends.postgresql
+DB_NAME=ai_blog_generation
+DB_USER=postgres
+DB_PASSWORD=postgres
+DB_HOST=localhost
+DB_PORT=5432
+```
+
+3. Create the PostgreSQL database:
+
+```bash
+# Using psql CLI
+createdb ai_blog_generation
+```
+
+4. Run database migrations:
+
+```bash
+python manage.py migrate
+```
+
+## API Endpoints
+
+The API provides the following endpoints:
+
+1. **Blog Generation**
+   - `POST /api/blogs/`
+   - Request: `{"topic": "Blog Topic", "keywords": "optional,keywords"}`
+   - Response: Generated blog post content and file path
+
+2. **Weekly AI News**
+   - `GET /api/news/`
+   - Response: Generated weekly AI news content and file path
+
+3. **LinkedIn Posts**
+   - `POST /api/linkedin/`
+   - Request: `{"topic": "LinkedIn Post Topic"}`
+   - Response: Generated LinkedIn post content
+
+4. **Image Generation**
+   - `POST /api/images/`
+   - Request: `{"prompt": "Image Description", "keywords": "optional,keywords"}`
+   - Response: Generated image file path
+
+## Running the Server
+
+To start the development server:
+
+```bash
+# Standard development server
+python manage.py runserver
+
+# Specify host and port
+python manage.py runserver 0.0.0.0:8000
+```
+
+Access the API documentation at: http://localhost:8000/api/schema/swagger-ui/
+
+## Development Guidelines
+
+### Adding New Endpoints
+
+1. Define the model in `api/models.py`
+2. Create serializers in `api/serializers.py`
+3. Implement the view in `api/views.py`
+4. Add URL patterns in `api/urls.py`
+5. Run migrations:
+   ```bash
+   python manage.py makemigrations
+   python manage.py migrate
+   ```
+
+### Database Access
+
+The application automatically stores generated content in the PostgreSQL database using Django's ORM. To query the data:
+
+```python
+# Example: Retrieve the latest 10 blog posts
+from api.models import BlogGeneral
+recent_blogs = BlogGeneral.objects.order_by('-created_at')[:10]
+```
+
+### Environment Configuration
+
+The application uses python-dotenv to load environment variables. All settings in `.env` are accessible via:
+
+```python
+import os
+api_key = os.environ.get('OPENAI_API_KEY')
+```
+
+## Troubleshooting
+
+### Database Connection Issues
+
+If you encounter database connection problems:
+
+1. Check PostgreSQL is running:
+   ```bash
+   pg_isready
+   ```
+
+2. Verify connection settings in `.env` file
+
+3. Test connection with psql:
+   ```bash
+   psql -h localhost -U postgres -d ai_blog_generation
+   ```
+
+### Migration Issues
+
+If you encounter migration problems:
+
+```bash
+# Reset migrations (caution: this loses all data)
+python manage.py migrate api zero
+python manage.py makemigrations api
+python manage.py migrate
+```
+
+## Deployment
+
+For production deployment:
+
+1. Update `settings.py`:
+   - Set `DEBUG = False`
+   - Configure `ALLOWED_HOSTS`
+   - Use environment variables for sensitive settings
+
+2. Set up a production-ready server:
+   ```bash
+   pip install gunicorn
+   gunicorn app.wsgi:application
+   ```
+
+3. Configure a reverse proxy (Nginx/Apache)
+
+4. Use a proper PostgreSQL production configuration 
