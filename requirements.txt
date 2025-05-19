@@ -9,4 +9,14 @@ serpapi
 Markdown
 djangorestframework
 drf-spectacular
+# Additional dependencies
+crewai-tools
+httpx
+httpcore
+litellm
+# For development and testing
+pytest
+pytest-django
+# For image handling
+Pillow
 # Add any other specific versions if necessary 

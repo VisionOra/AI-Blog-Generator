@@ -8,6 +8,11 @@ from rest_framework.response import Response
 from rest_framework import status
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
 import logging
+from django.utils import timezone
+from datetime import datetime
+
+# Import models
+from .models import BlogGeneral, BlogAiNews, LinkedinPost, ImageGeneration
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -85,8 +90,19 @@ def generate_blog_api(request):
                 if os.path.exists(markdown_file_path):
                     with open(markdown_file_path, 'r', encoding='utf-8') as f:
                         blog_content = f.read()
+                        
+                    # Save to database
+                    blog = BlogGeneral(
+                        user_id=1,  # Default user ID until authentication is implemented
+                        topic=topic,
+                        content=blog_content,
+                        created_at=timezone.now()
+                    )
+                    blog.save()
+                    logger.info(f"Saved blog to database with ID: {blog.id}")
+                    
             except Exception as e:
-                logger.error(f"Error reading generated blog content: {e}")
+                logger.error(f"Error reading generated blog content or saving to database: {e}")
                 # Decide if you still want to return success but with a warning/empty content
                 # For now, we proceed but content might be empty
 
@@ -136,7 +152,6 @@ def generate_weekly_news_blog(request):
         
         topic = "Latest Trends and News This Week: Technology, Business, and Culture"
         
-        from datetime import datetime
         date_str = datetime.now().strftime("%Y-%m-%d")
         output_file_name = f"weekly_news_{date_str}.md"
         
@@ -161,21 +176,33 @@ def generate_weekly_news_blog(request):
         django_base_dir = settings.BASE_DIR
         relative_md_path = os.path.relpath(markdown_file_path, django_base_dir).replace(os.sep, '/')
         
+        blog_content = ""
+        try:
+            if os.path.exists(markdown_file_path):
+                with open(markdown_file_path, 'r', encoding='utf-8') as f:
+                    blog_content = f.read()
+                
+                # Save to database
+                news_blog = BlogAiNews(
+                    news_week_start=datetime.now().date(),
+                    summary=topic,  # Using the topic as a summary
+                    content=blog_content,
+                    created_at=timezone.now()
+                )
+                news_blog.save()
+                logger.info(f"Saved weekly news blog to database with ID: {news_blog.id}")
+        except Exception as e:
+            logger.error(f"Error reading generated blog content or saving to database: {e}")
+            # Continue with the response even if saving to DB fails
+        
         response_data = {
             'status': 'success',
             'message': 'Weekly news blog generated successfully!',
             'topic': topic,
             'date': date_str,
             'markdown_file': relative_md_path,
+            'content': blog_content
         }
-        
-        try:
-            if os.path.exists(markdown_file_path):
-                with open(markdown_file_path, 'r', encoding='utf-8') as f:
-                    response_data['content'] = f.read()
-        except Exception as e:
-            logger.error(f"Error reading generated blog content: {e}")
-            response_data['warning'] = f"Generated file exists but could not be read: {str(e)}"
         
         return Response(response_data, status=status.HTTP_200_OK)
         
@@ -234,6 +261,16 @@ def generate_image_api(request):
             if image_path:
                 django_base_dir = settings.BASE_DIR
                 relative_image_path = os.path.relpath(image_path, django_base_dir).replace(os.sep, '/')
+                
+                # Save to database
+                image_record = ImageGeneration(
+                    user_id=1,  # Default user ID until authentication is implemented
+                    prompt=final_prompt,
+                    image_url=relative_image_path,
+                    created_at=timezone.now()
+                )
+                image_record.save()
+                logger.info(f"Saved image generation record to database with ID: {image_record.id}")
                 
                 response_data = {
                     'status': 'success',
@@ -296,6 +333,16 @@ def generate_linkedin_post_api(request):
             linkedin_post_content, saved_file_path = linkedin_generator.generate_post(topic=topic)
 
             if linkedin_post_content:
+                # Save to database
+                linkedin_post = LinkedinPost(
+                    user_id=1,  # Default user ID until authentication is implemented
+                    topic=topic,
+                    content=linkedin_post_content,
+                    created_at=timezone.now()
+                )
+                linkedin_post.save()
+                logger.info(f"Saved LinkedIn post to database with ID: {linkedin_post.id}")
+                
                 response_data = {
                     'status': 'success',
                     'message': 'LinkedIn post generated successfully!',
