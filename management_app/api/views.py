@@ -12,7 +12,7 @@ from django.utils import timezone
 from datetime import datetime
 
 # Import models
-from .models import BlogGeneral, BlogAiNews, LinkedinPost, ImageGeneration
+from .models import BlogGeneral, BlogAiNews, LinkedinPost, ImageGeneration, TrendingTopics
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -26,6 +26,10 @@ if os.path.dirname(settings.TOOLS_DIR) not in sys.path:
 from tools.ai.blog_generator.blog_writer import BlogWriter, generate_image
 # Import the new LinkedInPostGenerator service
 from tools.ai.linkedin_post_generator.linkedin_post_generator import LinkedInPostGenerator
+# Import the PyTrends service
+from tools.ai.trends_ai.pytrends_api import (
+    fetch_related_topics
+)
 
 # Import serializers
 from .serializers import (
@@ -33,7 +37,9 @@ from .serializers import (
     LinkedInPostResponseSerializer,
     ErrorResponseSerializer,
     BlogRequestSerializer, BlogResponseSerializer,
-    ImageGenerationRequestSerializer, ImageGenerationResponseSerializer
+    ImageGenerationRequestSerializer, ImageGenerationResponseSerializer,
+    TrendingKeywordsRequestSerializer, TrendingKeywordsResponseSerializer,
+    RelatedTopicsRequestSerializer, RelatedTopicsResponseSerializer
 )
 
 @extend_schema(
@@ -360,4 +366,92 @@ def generate_linkedin_post_api(request):
     else:
         # If serializer validation fails, return errors
         logger.warning(f"Invalid input for LinkedIn post generation: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST) 
+
+@extend_schema(
+    request=RelatedTopicsRequestSerializer,
+    responses={
+        200: OpenApiResponse(response=RelatedTopicsResponseSerializer, description='Related topics fetched and saved successfully.'),
+        400: OpenApiResponse(response=ErrorResponseSerializer, description='Bad Request - Invalid input.'),
+        500: OpenApiResponse(response=ErrorResponseSerializer, description='Internal Server Error.')
+    },
+    description="Fetch topics related to a given keyword using Google Trends data and save to database."
+)
+@api_view(['POST'])
+def fetch_and_save_related_topics(request):
+    """
+    Fetches topics related to a given keyword using Google Trends and saves to database.
+    
+    Input is a JSON object with:
+    - "keyword" (required): Main keyword to find related topics for
+    """
+    # Validate request data using the serializer
+    serializer = RelatedTopicsRequestSerializer(data=request.data)
+    if serializer.is_valid():
+        keyword = serializer.validated_data['keyword']
+        
+        try:
+            logger.info(f"Starting related topics fetch for keyword: '{keyword}'")
+            
+            # 1. Initialize PyTrends client with minimal parameters
+            from pytrends.request import TrendReq
+            pytrends = TrendReq(hl='en-US', tz=360)
+            
+            # 2. Build payload with the keyword
+            logger.info(f"Building payload for keyword: '{keyword}'")
+            pytrends.build_payload([keyword])
+            
+            # 3. Get related topics directly
+            related_topics_result = pytrends.related_topics()
+            
+            # Process results
+            topics_list = []
+            if keyword in related_topics_result:
+                # Process both top and rising topics
+                for category in ['top', 'rising']:
+                    if category in related_topics_result[keyword] and not related_topics_result[keyword][category].empty:
+                        df = related_topics_result[keyword][category]
+                        for _, row in df.iterrows():
+                            topics_list.append({
+                                'title': row.get('topic_title', ''),
+                                'type': row.get('topic_type', ''),
+                                'value': float(row.get('value', 0)),
+                                'trend_type': category
+                            })
+            
+            # Save to database
+            if topics_list:
+                db_record = TrendingTopics(
+                    keyword=keyword,
+                    topics=topics_list,
+                    created_at=timezone.now()
+                )
+                db_record.save()
+                record_id = db_record.id
+                logger.info(f"Saved {len(topics_list)} topics to database with ID: {record_id}")
+            else:
+                record_id = None
+                logger.warning(f"No topics found for keyword: '{keyword}'")
+            
+            # Return response
+            response_data = {
+                'status': 'success',
+                'message': f"Found {len(topics_list)} related topics for '{keyword}'",
+                'keyword': keyword,
+                'related_topics': topics_list
+            }
+            
+            if record_id:
+                response_data['id'] = record_id
+                
+            return Response(response_data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            logger.error(f"Error fetching related topics: {str(e)}")
+            return Response({
+                'status': 'error',
+                'message': f"Failed to fetch related topics: {str(e)}",
+                'keyword': keyword
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    else:
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST) 

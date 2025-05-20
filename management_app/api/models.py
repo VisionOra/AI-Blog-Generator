@@ -39,4 +39,13 @@ class ImageGeneration(models.Model):
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
-        db_table = 'image_generation' 
+        db_table = 'image_generation'
+
+
+class TrendingTopics(models.Model):
+    keyword = models.CharField(max_length=255)
+    topics = models.JSONField()  # Stores related topics as JSON
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = 'trending_topics' 

@@ -12,7 +12,7 @@ SECRET_KEY = 'django-insecure-dummy-key' # Replace with a real secret key
 
 DEBUG = True
 
-ALLOWED_HOSTS = ['0.0.0.0', 'localhost', '127.0.0.1']
+ALLOWED_HOSTS = ['*']
 
 # Application definition
 INSTALLED_APPS = [
@@ -25,6 +25,9 @@ INSTALLED_APPS = [
     'api',  # Our API app
     'rest_framework',
     'drf_spectacular',
+    'authentication',  # Authentication app
+    'rest_framework_simplejwt',  # JWT token authentication
+    'social_django',  # Social auth
 ]
 
 MIDDLEWARE = [
@@ -111,6 +114,9 @@ os.makedirs(GENERATED_BLOGS_DIR, exist_ok=True)
 
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
 }
 
 SPECTACULAR_SETTINGS = {
@@ -129,6 +135,12 @@ SPECTACULAR_SETTINGS = {
     4. You receive the path to the finished blog post
     
     Just enter your topic and click Execute!
+    
+    **Authentication:**
+    - Use JWT tokens for authentication
+    - Register via /auth/register/ endpoint
+    - Login via /auth/login/ endpoint
+    - Also supports Google and LinkedIn authentication
     ''',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
@@ -143,6 +155,16 @@ SPECTACULAR_SETTINGS = {
         'tryItOutEnabled': True,
     },
     'COMPONENT_SPLIT_REQUEST': True,
+    
+    'SECURITY': [{'Bearer': []}],
+    'SECURITY_DEFINITIONS': {
+        'Bearer': {
+            'type': 'apiKey',
+            'in': 'header',
+            'name': 'Authorization',
+            'description': 'Enter: **Bearer <JWT token>**'
+        }
+    }
 }
 
 # Logging Configuration for Development
@@ -200,4 +222,61 @@ LOGGING = {
         },
         # Add other specific loggers here if needed
     }
-} 
+}
+
+# JWT Settings
+from datetime import timedelta
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': False,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': False,
+    
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
+    'VERIFYING_KEY': None,
+    'AUDIENCE': None,
+    'ISSUER': None,
+    
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'AUTH_HEADER_NAME': 'HTTP_AUTHORIZATION',
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+    
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+    'TOKEN_TYPE_CLAIM': 'token_type',
+    
+    'JTI_CLAIM': 'jti',
+    
+    'SLIDING_TOKEN_REFRESH_EXP_CLAIM': 'refresh_exp',
+    'SLIDING_TOKEN_LIFETIME': timedelta(days=1),
+    'SLIDING_TOKEN_REFRESH_LIFETIME': timedelta(days=7),
+}
+
+# Social Authentication Settings
+AUTHENTICATION_BACKENDS = (
+    'social_core.backends.google.GoogleOAuth2',
+    'social_core.backends.linkedin.LinkedinOAuth2',
+    'django.contrib.auth.backends.ModelBackend',
+)
+
+# Social Auth Keys - These should be set in environment variables
+SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = os.environ.get('GOOGLE_OAUTH2_KEY', '')
+SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = os.environ.get('GOOGLE_OAUTH2_SECRET', '')
+
+SOCIAL_AUTH_LINKEDIN_OAUTH2_KEY = os.environ.get('LINKEDIN_OAUTH2_KEY', '')
+SOCIAL_AUTH_LINKEDIN_OAUTH2_SECRET = os.environ.get('LINKEDIN_OAUTH2_SECRET', '')
+
+# Define which fields to get from the user's profile after authentication
+SOCIAL_AUTH_PIPELINE = (
+    'social_core.pipeline.social_auth.social_details',
+    'social_core.pipeline.social_auth.social_uid',
+    'social_core.pipeline.social_auth.auth_allowed',
+    'social_core.pipeline.social_auth.social_user',
+    'social_core.pipeline.user.get_username',
+    'social_core.pipeline.user.create_user',
+    'social_core.pipeline.social_auth.associate_user',
+    'social_core.pipeline.social_auth.load_extra_data',
+    'social_core.pipeline.user.user_details',
+) 
