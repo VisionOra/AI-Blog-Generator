@@ -18,9 +18,10 @@ POSTS_OUTPUT_DIR = os.path.join(SERVICE_BASE_DIR, 'posts')
 class LinkedInPostGenerator:
     """A crew for generating LinkedIn posts."""
 
-    def __init__(self, use_custom_llm=False, topic=None):
+    def __init__(self, use_custom_llm=False, topic=None, keywords=None):
         self.use_custom_llm = use_custom_llm
         self.topic = topic
+        self.keywords = keywords if keywords else []
 
         if use_custom_llm:
             gemini_api_key = os.getenv("GOOGLE_API_KEY")
@@ -60,9 +61,18 @@ class LinkedInPostGenerator:
     @task
     def linkedin_generation_task(self):
         topic_placeholder = self.topic if self.topic else "{topic}"
+        keywords_text = ""
+        if self.keywords and len(self.keywords) > 0:
+            keywords_text = f" You MUST incorporate these specific keywords: {', '.join(self.keywords)}."
         
         return Task(
-            description=f"""Generate a LinkedIn post for the topic: {topic_placeholder}.
+            description=f"""Generate a LinkedIn post STRICTLY focused on the EXACT topic: "{topic_placeholder}".{keywords_text}
+            
+            STRICT CONTENT REQUIREMENTS:
+            - Your post MUST be SPECIFICALLY about "{topic_placeholder}" - not general AI or related fields
+            - STAY FOCUSED on the exact topic without drifting to broader subjects
+            - If keywords are provided, you MUST incorporate ALL of them naturally in the content
+            - Your content should demonstrate expertise specifically in "{topic_placeholder}"
             
             STRICT OUTPUT FORMAT:
             Paragraph 1 (with 1-2 emojis naturally integrated)
@@ -101,13 +111,14 @@ Remember that consistency is key in digital marketing. Creating a content calend
             agent=self.linkedin_post_writer_agent()
         )
 
-    def generate_post(self, topic: str):
+    def generate_post(self, topic: str, keywords=None):
         """Generates a LinkedIn post for a given topic and saves it to a file."""
         if not topic:
             raise ValueError("Topic must be provided for LinkedIn post generation.")
 
         # Update the instance topic
         self.topic = topic
+        self.keywords = keywords if keywords else []
 
         # Create a fresh agent and task for each generation to avoid any caching issues
         writer_agent = self.linkedin_post_writer_agent()

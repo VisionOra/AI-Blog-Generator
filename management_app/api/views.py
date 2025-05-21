@@ -281,8 +281,16 @@ def generate_image_api(request):
             logger.info(f"Starting image generation with prompt: '{final_prompt}'")
             image_output_dir = "api_generated_images"  # This is now just a prefix for S3
             
-            # Generate image and get S3 URL
-            image_url = generate_image(prompt=final_prompt, output_dir=image_output_dir)
+            # Generate image and get S3 URL and optimized prompt
+            image_result = generate_image(prompt=final_prompt, output_dir=image_output_dir)
+            
+            # Unpack the result tuple (image_url, optimized_prompt)
+            if isinstance(image_result, tuple) and len(image_result) == 2:
+                image_url, enhanced_prompt = image_result
+            else:
+                # Handle legacy function calls that might not return a tuple
+                image_url = image_result
+                enhanced_prompt = final_prompt
 
             if image_url:
                 # Determine if the URL is an S3 URL or local path
@@ -311,6 +319,7 @@ def generate_image_api(request):
                     'status': 'success',
                     'message': 'Image generated successfully!',
                     'prompt_used': final_prompt,
+                    'enhanced_prompt': enhanced_prompt,
                     'image_file': image_url_for_db
                 }
                 
@@ -356,12 +365,13 @@ def generate_linkedin_post_api(request):
     serializer = LinkedInPostRequestSerializer(data=request.data)
     if serializer.is_valid():
         topic = serializer.validated_data['topic']
+        keywords = serializer.validated_data.get('keywords', [])
         
         try:
-            logger.info(f"Starting LinkedIn post generation for topic: '{topic}'")
+            logger.info(f"Starting LinkedIn post generation for topic: '{topic}' with keywords: {keywords}")
 
-            linkedin_generator = LinkedInPostGenerator(topic=topic)
-            linkedin_post_content, saved_file_path = linkedin_generator.generate_post(topic=topic)
+            linkedin_generator = LinkedInPostGenerator(topic=topic, keywords=keywords)
+            linkedin_post_content, saved_file_path = linkedin_generator.generate_post(topic=topic, keywords=keywords)
 
             if linkedin_post_content:
                 # Save to database
@@ -378,6 +388,7 @@ def generate_linkedin_post_api(request):
                     'status': 'success',
                     'message': 'LinkedIn post generated successfully!',
                     'topic': topic,
+                    'keywords': keywords,
                     'linkedin_post': linkedin_post_content
                 }
                 if saved_file_path:

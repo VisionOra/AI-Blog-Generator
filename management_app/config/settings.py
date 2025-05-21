@@ -28,11 +28,13 @@ INSTALLED_APPS = [
     'authentication',  # Authentication app
     'rest_framework_simplejwt',  # JWT token authentication
     'social_django',  # Social auth
+    'corsheaders',  # CORS headers
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware',  # CORS middleware - must be before CommonMiddleware
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -279,4 +281,27 @@ SOCIAL_AUTH_PIPELINE = (
     'social_core.pipeline.social_auth.associate_user',
     'social_core.pipeline.social_auth.load_extra_data',
     'social_core.pipeline.user.user_details',
-) 
+)
+
+# CORS settings
+CORS_ALLOW_ALL_ORIGINS = True  # Allow all origins
+CORS_ALLOW_CREDENTIALS = True  # Allow cookies to be sent with requests
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+] 

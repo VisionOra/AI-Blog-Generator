@@ -16,7 +16,66 @@ import yaml
 # Load environment variables
 load_dotenv()
 
-def generate_image(prompt, size="1024x1024", output_dir="blog_images"):
+def optimize_image_prompt(prompt, topic=None):
+    """
+    Optimize the image generation prompt using an AI agent
+    
+    Args:
+        prompt (str): The original prompt for image generation
+        topic (str, optional): The blog topic for context
+        
+    Returns:
+        str: Enhanced prompt optimized for DALL-E 3
+    """
+    try:
+        # Check for API key
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            return prompt  # Return original prompt if no API key
+            
+        # Initialize OpenAI client
+        client = OpenAI(api_key=api_key)
+        
+        # Context to provide to the optimization agent
+        topic_context = f" about {topic}" if topic else ""
+        
+        # Create a system message for the prompt optimization agent
+        system_message = """You are an expert image prompt engineer for DALL-E 3. 
+Your job is to enhance and optimize image prompts to create stunning, detailed, and professional blog banner images.
+Focus on adding details that improve composition, lighting, color schemes, and visual elements.
+Make the prompt specific and descriptive while maintaining the original intent.
+For blog banners, ensure the enhanced prompt will generate images that:
+1. Look professional and polished
+2. Have good composition for text overlay
+3. Are visually appealing and relevant to the topic
+4. Have appropriate negative prompts to avoid text generation
+"""
+        
+        # Call the OpenAI API to optimize the prompt
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": f"Optimize this image prompt for a blog banner{topic_context}: {prompt}"}
+            ],
+            temperature=0.7,
+            max_tokens=300
+        )
+        
+        # Extract the optimized prompt
+        optimized_prompt = response.choices[0].message.content.strip()
+        
+        # If the optimized prompt is empty or too short, fallback to original
+        if not optimized_prompt or len(optimized_prompt) < 20:
+            return prompt
+            
+        return optimized_prompt
+        
+    except Exception as e:
+        print(f"Error optimizing image prompt: {str(e)}")
+        return prompt  # Return original prompt on error
+
+def generate_image(prompt, size="1024x1024", output_dir="blog_images", topic=None):
     """
     Generate an image using OpenAI's DALL-E 3 API and upload to S3
     
@@ -24,26 +83,34 @@ def generate_image(prompt, size="1024x1024", output_dir="blog_images"):
         prompt (str): The prompt for image generation
         size (str): The size of the image (default: "1024x1024")
         output_dir (str): Directory to save the image (now only used as a prefix in S3)
+        topic (str, optional): The blog topic for prompt optimization context
         
     Returns:
-        str: S3 URL to the generated image or None if generation failed
+        tuple: (image_url, optimized_prompt) where image_url is the S3 URL to the generated image (or None if failed)
+              and optimized_prompt is the enhanced prompt used for generation
     """
     # Validate prompt and provide fallback if needed
     if not prompt or not prompt.strip():
         fallback_topic = getattr(BlogWriter, '_current_topic', "Professional blog post")
         prompt = f"Create a professional banner image for a blog about {fallback_topic}."
+        topic = fallback_topic
+
+    # Optimize the prompt using the AI agent
+    optimized_prompt = optimize_image_prompt(prompt, topic)
+    print(f"Original prompt: {prompt}")
+    print(f"Optimized prompt: {optimized_prompt}")
 
     # Check for API key
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
-        return None
+        return None, optimized_prompt
         
     try:
         # Initialize OpenAI client and generate image
         client = OpenAI(api_key=api_key)
         response = client.images.generate(
             model="dall-e-3",
-            prompt=prompt,
+            prompt=optimized_prompt,
             size=size,
             quality="standard",
             n=1,
@@ -71,7 +138,7 @@ def generate_image(prompt, size="1024x1024", output_dir="blog_images"):
             filepath = os.path.join(output_dir, filename)
             with open(filepath, "wb") as f:
                 f.write(image_response.content)
-            return filepath
+            return filepath, optimized_prompt
         
         # Initialize S3 client
         s3_client = boto3.client(
@@ -91,11 +158,11 @@ def generate_image(prompt, size="1024x1024", output_dir="blog_images"):
         
         # Generate S3 URL
         s3_url = f"https://{bucket_name}.s3.{region}.amazonaws.com/{s3_key}"
-        return s3_url
+        return s3_url, optimized_prompt
     
     except Exception as e:
         print(f"Error generating or uploading image: {str(e)}")
-        return None
+        return None, optimized_prompt
 
 @CrewBase
 class BlogWriter:
@@ -687,13 +754,14 @@ Ready to take your knowledge of {self.topic} to the next level? Subscribe to our
             image_output_dir (str): Directory to save the image
             
         Returns:
-            str: Path to the generated image or None
+            tuple: (image_path, optimized_prompt) where image_path is the path to the generated image (or None)
+                  and optimized_prompt is the enhanced prompt used for generation
         """
         # Ensure prompt is not empty
         if not prompt or not prompt.strip():
             prompt = f"Create a professional banner image for a blog about '{self.topic}'."
             
-        return generate_image(prompt, size=size, output_dir=image_output_dir)
+        return generate_image(prompt, size=size, output_dir=image_output_dir, topic=self.topic)
     
     def generate_banner_image_for_blog(self, topic=None, image_output_dir="blog_images"):
         """
@@ -704,7 +772,8 @@ Ready to take your knowledge of {self.topic} to the next level? Subscribe to our
             image_output_dir (str): Directory to save the image
             
         Returns:
-            str: Path to the generated image or None
+            tuple: (image_path, optimized_prompt) where image_path is the path to the generated image (or None)
+                  and optimized_prompt is the enhanced prompt used for generation
         """
         effective_topic = topic if topic else self.topic
         if not effective_topic:
@@ -713,7 +782,7 @@ Ready to take your knowledge of {self.topic} to the next level? Subscribe to our
         # Create a generic image prompt
         prompt = f"Create a professional, visually appealing banner image for a blog post about {effective_topic}. Use vibrant colors and modern design elements. Include Artilence branding with the main color #04C996, along with black and white accents."
         
-        return generate_image(prompt, size="1792x1024", output_dir=image_output_dir)
+        return generate_image(prompt, size="1792x1024", output_dir=image_output_dir, topic=effective_topic)
     
     def save_blog_to_file(self, topic=None, output_file_name=None, base_output_dir=None):
         """Generate a blog post and save it to a file. Returns the file path."""

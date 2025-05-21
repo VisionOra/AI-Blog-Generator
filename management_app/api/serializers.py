@@ -5,6 +5,12 @@ class LinkedInPostRequestSerializer(serializers.Serializer):
         max_length=200,
         help_text="The topic for the LinkedIn post."
     )
+    keywords = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        default=list,
+        help_text="Optional keywords to guide LinkedIn post generation."
+    )
 
 class LinkedInPostResponseSerializer(serializers.Serializer):
     status = serializers.CharField()
@@ -12,6 +18,11 @@ class LinkedInPostResponseSerializer(serializers.Serializer):
     topic = serializers.CharField()
     linkedin_post = serializers.CharField()
     saved_file = serializers.CharField(required=False) # Optional field
+    keywords = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        default=list
+    )
 
 # It's also good practice to have a generic error serializer if you have consistent error responses
 class ErrorResponseSerializer(serializers.Serializer):
@@ -167,6 +178,7 @@ class ImageGenerationResponseSerializer(serializers.Serializer):
     status = serializers.CharField()
     message = serializers.CharField()
     prompt_used = serializers.CharField()
+    enhanced_prompt = serializers.CharField()
     image_file = serializers.CharField()
 
 # Serializers for Related Topics API
