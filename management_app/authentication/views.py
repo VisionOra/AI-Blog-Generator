@@ -11,18 +11,32 @@ import json
 import os
 from django.urls import reverse
 from django.conf import settings
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Reload .env file to ensure fresh environment variables
+# Get the base directory of the project
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+# Load environment variables from .env file
+load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 from .models import User
 from .serializers import (
     UserSerializer, RegisterSerializer, LoginSerializer,
     CustomTokenObtainPairSerializer, TokenRefreshResponseSerializer,
-    GoogleAuthSerializer, GoogleLoginRedirectSerializer
+    GoogleAuthSerializer, GoogleLoginRedirectSerializer,
+    LinkedInAuthSerializer, LinkedInLoginRedirectSerializer
 )
 
 # Google OAuth settings - these should be set in environment variables
 GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID', '')
 GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET', '')
-GOOGLE_REDIRECT_URI = os.environ.get('GOOGLE_REDIRECT_URI', 'http://localhost:8001/auth/google/callback')
+GOOGLE_REDIRECT_URI = os.environ.get('GOOGLE_REDIRECT_URI', '')
+
+LINKEDIN_CLIENT_ID = os.environ.get('LINKEDIN_CLIENT_ID', '')
+LINKEDIN_CLIENT_SECRET = os.environ.get('LINKEDIN_CLIENT_SECRET', '')
+LINKEDIN_REDIRECT_URI = os.environ.get('LINKEDIN_REDIRECT_URI', '')
+print(LINKEDIN_REDIRECT_URI)
 
 class UserListView(generics.ListAPIView):
     queryset = User.objects.all()
@@ -213,58 +227,140 @@ class GoogleLoginCallbackView(APIView):
                 'error': str(e)
             }, status=status.HTTP_400_BAD_REQUEST)
 
-class GoogleLoginTokenView(APIView):
+class CustomTokenRefreshView(TokenRefreshView):
     """
-    Handle direct ID token verification from frontend
+    Custom token refresh view with our response serializer
+    """
+    serializer_class = TokenRefreshResponseSerializer
+
+class LinkedInLoginRedirectView(APIView):
+    """
+    Redirect user to LinkedIn OAuth login page
     """
     permission_classes = [permissions.AllowAny]
-    serializer_class = GoogleAuthSerializer
+    serializer_class = LinkedInLoginRedirectSerializer
     
-    def post(self, request):
-        serializer = self.serializer_class(data=request.data)
+    def get(self, request):
+        # Construct LinkedIn OAuth URL
+        linkedin_auth_url = "https://www.linkedin.com/oauth/v2/authorization"
+        params = {
+            "client_id": LINKEDIN_CLIENT_ID,
+            "redirect_uri": LINKEDIN_REDIRECT_URI,
+            "response_type": "code",
+            "scope": "openid profile w_member_social email",
+            "state": hashlib.sha256(os.urandom(32).hex().encode()).hexdigest()
+        }
+        
+        # Construct full URL with parameters
+        auth_url = f"{linkedin_auth_url}?{'&'.join([f'{key}={value}' for key, value in params.items()])}"
+        
+        # Return the URL for frontend to redirect
+        return Response({
+            "auth_url": auth_url
+        })
+
+class LinkedInLoginCallbackView(APIView):
+    """
+    Handle callback from LinkedIn OAuth login
+    """
+    permission_classes = [permissions.AllowAny]
+    serializer_class = LinkedInAuthSerializer
+    
+    def get(self, request):
+        serializer = self.serializer_class(data=request.query_params)
         serializer.is_valid(raise_exception=True)
         
-        id_token = serializer.validated_data.get('id_token')
+        code = serializer.validated_data.get('code')
+        error = serializer.validated_data.get('error')
         
-        if not id_token:
+        if error:
             return Response({
                 'success': False,
-                'message': 'Google login failed',
-                'error': 'No ID token provided'
+                'message': 'LinkedIn login failed',
+                'error': error,
+                'error_description': request.query_params.get('error_description', '')
             }, status=status.HTTP_400_BAD_REQUEST)
         
+        if not code:
+            return Response({
+                'success': False,
+                'message': 'LinkedIn login failed',
+                'error': 'No authorization code provided'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Exchange code for tokens
         try:
-            # Verify the token with Google
-            verify_url = f"https://oauth2.googleapis.com/tokeninfo?id_token={id_token}"
-            verify_response = requests.get(verify_url)
-            user_info = verify_response.json()
+            token_url = "https://www.linkedin.com/oauth/v2/accessToken"
+            token_data = {
+                "code": code,
+                "client_id": LINKEDIN_CLIENT_ID,
+                "client_secret": LINKEDIN_CLIENT_SECRET,
+                "redirect_uri": LINKEDIN_REDIRECT_URI,
+                "grant_type": "authorization_code"
+            }
             
-            if 'error' in user_info:
+            token_response = requests.post(token_url, data=token_data)
+            token_json = token_response.json()
+            
+            if 'error' in token_json:
                 return Response({
                     'success': False,
-                    'message': 'Google login failed',
-                    'error': user_info.get('error_description', user_info['error'])
+                    'message': 'LinkedIn login failed',
+                    'error': token_json.get('error_description', token_json['error'])
                 }, status=status.HTTP_400_BAD_REQUEST)
                 
-            # Get or create user
-            email = user_info.get('email')
-            if not email:
+            # Get user profile from LinkedIn
+            access_token = token_json.get('access_token')
+            
+            # Get user profile - using userinfo endpoint for OpenID Connect flow
+            profile_url = "https://api.linkedin.com/v2/userinfo"
+            profile_response = requests.get(
+                profile_url,
+                headers={"Authorization": f"Bearer {access_token}"}
+            )
+            profile_data = profile_response.json()
+            
+            # For debugging
+            print("LinkedIn profile data:", profile_data)
+            
+            # Extract profile info using OpenID Connect fields
+            try:
+                # OpenID Connect provides standardized fields
+                name = profile_data.get('name', '')
+                email = profile_data.get('email', '')
+                linkedin_id = profile_data.get('sub', '') # 'sub' is the standard ID field in OpenID Connect
+                
+                if not linkedin_id:
+                    return Response({
+                        'success': False,
+                        'message': 'LinkedIn login failed',
+                        'error': 'Failed to retrieve LinkedIn ID'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+                
+                # If email wasn't provided, generate one
+                if not email:
+                    email = f"linkedin_{linkedin_id}@linkedin.com"
+                
+                # Generate a username if needed
+                username = name if name else f"linkedin_{linkedin_id}"
+                
+            except (KeyError, IndexError):
                 return Response({
                     'success': False,
-                    'message': 'Google login failed',
-                    'error': 'Email not provided by Google'
+                    'message': 'LinkedIn login failed',
+                    'error': 'Failed to retrieve user information'
                 }, status=status.HTTP_400_BAD_REQUEST)
-                
+            
             # Check if user exists
             try:
+                # First try to find by our constructed email
                 user = User.objects.get(email=email)
             except User.DoesNotExist:
                 # Create a new user
-                username = user_info.get('name', email.split('@')[0])
                 user = User.objects.create(
                     username=username,
                     email=email,
-                    # Use a random hashed password since user will login via Google
+                    # Use a random hashed password
                     password=hashlib.sha256(os.urandom(32).hex().encode()).hexdigest()
                 )
             
@@ -272,23 +368,27 @@ class GoogleLoginTokenView(APIView):
             refresh = RefreshToken.for_user(user)
             
             # Return tokens
-            return Response({
+            response_data = {
                 'success': True,
-                'message': 'Google login successful',
+                'message': 'LinkedIn login successful',
                 'refresh': str(refresh),
                 'access': str(refresh.access_token),
                 'user': UserSerializer(user).data
-            })
+            }
+            
+            # For APIs, return the response
+            if request.accepted_renderer.format == 'json':
+                return Response(response_data)
+                
+            # For browser flow, redirect to frontend with tokens
+            frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
+            redirect_url = f"{frontend_url}/login/success?access={str(refresh.access_token)}&refresh={str(refresh)}"
+            return redirect(redirect_url)
             
         except Exception as e:
             return Response({
                 'success': False,
-                'message': 'Google login failed',
+                'message': 'LinkedIn login failed',
                 'error': str(e)
             }, status=status.HTTP_400_BAD_REQUEST)
 
-class CustomTokenRefreshView(TokenRefreshView):
-    """
-    Custom token refresh view with our response serializer
-    """
-    serializer_class = TokenRefreshResponseSerializer

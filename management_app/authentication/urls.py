@@ -2,7 +2,8 @@ from django.urls import path
 from .views import (
     RegisterView, LoginView, UserListView,
     CustomTokenRefreshView, GoogleLoginRedirectView,
-    GoogleLoginCallbackView, GoogleLoginTokenView
+    GoogleLoginCallbackView, 
+    LinkedInLoginRedirectView, LinkedInLoginCallbackView
 )
 
 urlpatterns = [
@@ -15,5 +16,8 @@ urlpatterns = [
     # Google auth endpoints
     path('google/login/', GoogleLoginRedirectView.as_view(), name='google_login'),
     path('google/callback/', GoogleLoginCallbackView.as_view(), name='google_callback'),
-    path('google/token/', GoogleLoginTokenView.as_view(), name='google_token'),
+    
+    # LinkedIn auth endpoints
+    path('linkedin/login/', LinkedInLoginRedirectView.as_view(), name='linkedin_login'),
+    path('linkedin/callback/', LinkedInLoginCallbackView.as_view(), name='linkedin_callback'),
 ] 

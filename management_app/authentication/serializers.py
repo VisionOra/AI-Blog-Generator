@@ -91,4 +91,23 @@ class TokenRefreshResponseSerializer(serializers.Serializer):
     Serializer for token refresh response
     """
     access = serializers.CharField()
-    refresh = serializers.CharField(required=False) 
+    refresh = serializers.CharField(required=False)
+
+
+class LinkedInAuthSerializer(serializers.Serializer):
+    """
+    Serializer for handling LinkedIn auth code
+    """
+    code = serializers.CharField(required=False)
+    error = serializers.CharField(required=False)
+    state = serializers.CharField(required=False)
+    
+    # For handling LinkedIn token directly from frontend
+    access_token = serializers.CharField(required=False)
+
+
+class LinkedInLoginRedirectSerializer(serializers.Serializer):
+    """
+    Serializer for LinkedIn login redirect
+    """
+    auth_url = serializers.URLField(read_only=True) 
