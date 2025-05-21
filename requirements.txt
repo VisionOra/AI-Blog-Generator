@@ -1,22 +1,32 @@
-Django>=3.2,<4.3
-crewai
-langchain-openai
-langchain-google-genai
-openai
-python-dotenv
-requests
-serpapi
-Markdown
-djangorestframework
-drf-spectacular
+Django>=3.2.21,<4.3
+crewai>=0.28.0
+langchain-openai>=0.0.2
+langchain-google-genai>=0.0.6
+openai>=1.10.0
+python-dotenv>=1.0.0
+requests>=2.31.0
+serpapi>=0.1.0
+Markdown>=3.4.3
+djangorestframework>=3.14.0
+drf-spectacular>=0.26.2
+# JWT Authentication
+djangorestframework-simplejwt>=5.3.0
+# Social Authentication
+social-auth-app-django>=5.2.0
 # Additional dependencies
-crewai-tools
-httpx
-httpcore
-litellm
+crewai-tools>=0.1.0
+httpx>=0.26.0
+httpcore>=1.0.0
+litellm>=1.16.0,<2.0.0
 # For development and testing
-pytest
-pytest-django
+pytest>=7.4.0
+pytest-django>=4.5.2
 # For image handling
-Pillow
+Pillow>=10.0.0
 # Add any other specific versions if necessary 
+pytrends>=4.9.2
+pandas>=2.0.0
+lxml>=4.9.3
+posthog>=1.1.0
+psycopg2-binary>=2.9.5
+psycopg>=3.1.8

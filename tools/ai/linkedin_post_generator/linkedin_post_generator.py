@@ -5,6 +5,7 @@ from crewai.project import CrewBase, agent, crew, task
 from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from datetime import datetime
+import re
 
 # Load environment variables
 load_dotenv()
@@ -44,12 +45,13 @@ class LinkedInPostGenerator:
         return Agent(
             role="LinkedIn Content Strategist",
             goal="""Craft a professional, elegant, and impactful LinkedIn post for the given topic.
-            The post should be structured as two distinct, concise paragraphs, each offering some insight or value.
-            It must incorporate SEO-friendly keywords naturally, judiciously use professional emojis to enhance readability and engagement,
-            and conclude with relevant hashtags.""",
-            backstory="""You are an expert LinkedIn content creator, skilled in writing concise and impactful posts
-            that drive engagement. You understand the nuances of professional social media communication, SEO,
-            and the subtle use of emojis to enhance a message, focusing on delivering value in a polished format.""",
+            The post must be structured as exactly two distinct paragraphs followed by hashtags.
+            Each paragraph should offer insight or value. No headers, titles, or metadata should be included.
+            The post must include strategic emojis and end with relevant hashtags only.""",
+            backstory="""You are an elite LinkedIn content creator, renowned for writing concise, high-impact posts
+            that drive engagement. You create clean, direct professional content with no unnecessary formatting.
+            Your posts always follow the exact same structure: two paragraphs with emojis integrated naturally
+            within the text, followed by relevant hashtags. You never include explanations, headers, or metadata.""",
             verbose=True,
             llm=self.llm,
             allow_delegation=False
@@ -61,20 +63,41 @@ class LinkedInPostGenerator:
         
         return Task(
             description=f"""Generate a LinkedIn post for the topic: {topic_placeholder}.
-            The post must adhere to the following criteria:
-            - Tone: Professional and elegant.
-            - Structure: Two distinct paragraphs. Each paragraph should be concise (e.g., 2-4 sentences long), well-developed, and focus on a key aspect or provide valuable insight related to the topic.
-            - Content: Clean, incorporating relevant SEO-friendly keywords naturally.
-            - Emojis: Thoughtfully integrate 1-2 professional and relevant emojis per paragraph where they enhance the message or readability. Avoid overuse and ensure they maintain an elegant tone.  مثلاً (For example: ✨, 🚀, 💡, 📈, 🤝, ✅)
-            - Conclusion: End with 3-5 relevant hashtags.
-            The output should be only the LinkedIn post content itself, formatted with a clear separation between the two paragraphs.""",
-            expected_output="""A professional LinkedIn post composed of two well-defined, concise paragraphs, subtly enhanced with 1-2 professional emojis per paragraph, and followed by 3-5 relevant hashtags.
-Example:
-[Paragraph 1: 2-4 sentences developing a key point or introducing the topic with an insight. ✨ Maybe an emoji here.]
+            
+            STRICT OUTPUT FORMAT:
+            Paragraph 1 (with 1-2 emojis naturally integrated)
+            
+            Paragraph 2 (with 1-2 emojis naturally integrated)
+            
+            #hashtag1 #hashtag2 #hashtag3 #hashtag4
+            
+            REQUIREMENTS:
+            1. Paragraph 1: Write 2-4 concise, professional sentences with 1-2 relevant emojis integrated naturally.
+            2. Paragraph 2: Write 2-4 concise, professional sentences with 1-2 relevant emojis integrated naturally.
+            3. Include exactly ONE blank line between paragraphs.
+            4. End with 3-5 relevant hashtags, all lowercase, no spaces within hashtags.
+            5. Use professional emojis only (e.g.: ✨, 🚀, 💡, 📈, 🤝, ✅).
+            
+            CRITICAL RULES:
+            - START IMMEDIATELY with the first paragraph text. NO intro text like "LinkedIn post:" or "Here's a post about:"
+            - NO headers or section titles in brackets like [Introduction] or [Paragraph 1]
+            - NO explanations about what you've written
+            - NO quotes or attribution
+            - NO numbering of paragraphs
+            - NEVER respond with anything except the exact format above
+            - DO NOT explain your thought process
+            - NEVER use bullet points
+            - CREATE NEW ORIGINAL CONTENT specific to the topic "{topic_placeholder}" - DO NOT reuse this example
+            - NEVER use the cybersecurity example below - it is ONLY a format reference
+            
+            Your entire response must be ONLY the LinkedIn post content itself, and it must be ORIGINAL for the topic "{topic_placeholder}".""",
+            expected_output="""[Example format only - DO NOT COPY this content - Create original content for "{topic_placeholder}"]
 
-[Paragraph 2: 2-4 sentences expanding on another aspect, offering a takeaway, or a call to thought. 🚀 Perhaps another one here.]
+Are you leveraging digital marketing to its full potential? In today's competitive landscape, a comprehensive strategy that combines content marketing, SEO, and social media engagement is essential for building brand awareness. Investing time in understanding your audience's online behavior can transform your approach from generic to laser-focused, resulting in higher conversion rates and authentic brand connections. ✨
 
-#hashtag1 #hashtag2 #hashtag3 #hashtag4""",
+Remember that consistency is key in digital marketing. Creating a content calendar, establishing a clear brand voice, and regularly analyzing performance metrics will help you adapt and evolve your strategy effectively. The digital landscape changes rapidly, but businesses that remain adaptable while staying true to their core values will navigate these shifts successfully and build lasting customer relationships. 🚀
+
+#digitalmarketing #contentcreation #brandstrategy #onlineengagement""".format(topic_placeholder=topic_placeholder),
             agent=self.linkedin_post_writer_agent()
         )
 
@@ -83,55 +106,102 @@ Example:
         if not topic:
             raise ValueError("Topic must be provided for LinkedIn post generation.")
 
-        inputs = {"topic": topic}
-        self.topic = topic  # Update the instance topic
+        # Update the instance topic
+        self.topic = topic
 
+        # Create a fresh agent and task for each generation to avoid any caching issues
+        writer_agent = self.linkedin_post_writer_agent()
+        generation_task = self.linkedin_generation_task()
+        
+        # Configure the crew with these fresh instances
         linkedin_crew = Crew(
-            agents=[self.linkedin_post_writer_agent()],
-            tasks=[self.linkedin_generation_task()],
+            agents=[writer_agent],
+            tasks=[generation_task],
             process=Process.sequential,
             verbose=True
         )
         
-        post_content_raw = str(linkedin_crew.kickoff(inputs=inputs)).strip()
-
-        # Process content to lowercase all hashtags
-        if post_content_raw:
-            # Process each line individually to preserve line breaks
-            processed_lines = []
-            for line in post_content_raw.split('\n'):
-                processed_words = []
-                
-                for word in line.split():
-                    if word.startswith('#'):
-                        # Convert standalone hashtag to lowercase
-                        processed_words.append(word.lower())
-                    elif '#' in word:
-                        # Process word with embedded hashtag(s)
-                        new_word = ""
-                        i = 0
-                        while i < len(word):
-                            if word[i] == '#':
-                                # Start of hashtag
-                                hashtag_start = i
-                                i += 1
-                                # Find end of hashtag
-                                while i < len(word) and (word[i].isalnum() or word[i] == '_'):
-                                    i += 1
-                                # Extract and lowercase the hashtag
-                                hashtag = word[hashtag_start:i].lower()
-                                new_word += hashtag
-                            else:
-                                new_word += word[i]
-                                i += 1
-                        processed_words.append(new_word)
-                    else:
-                        # Regular word, no change needed
-                        processed_words.append(word)
-                
-                processed_lines.append(' '.join(processed_words))
+        # Explicitly set the temperature higher to encourage more variation
+        if hasattr(self.llm, 'temperature'):
+            original_temp = self.llm.temperature
+            self.llm.temperature = 0.8
             
-            post_content = '\n'.join(processed_lines)
+        # Force topic into inputs and add randomness parameter to avoid cached responses
+        import random
+        post_content_raw = str(linkedin_crew.kickoff(
+            inputs={
+                "topic": topic,
+                "variation_key": str(random.randint(1000, 9999))  # Add randomness to prevent caching
+            }
+        )).strip()
+        
+        # Restore original temperature if we changed it
+        if hasattr(self.llm, 'temperature') and 'original_temp' in locals():
+            self.llm.temperature = original_temp
+
+        # Enhanced cleanup for more aggressive formatting removal
+        if post_content_raw:
+            # Remove any potential prefix text (common patterns)
+            prefixes = [
+                "LinkedIn post:", "Here's a LinkedIn post:", "LinkedIn Post:", 
+                "Post:", "Here is a LinkedIn post:", "Here's the LinkedIn post:",
+                "Content:", "LinkedIn content:", "Here's the content:"
+            ]
+            for prefix in prefixes:
+                if post_content_raw.startswith(prefix):
+                    post_content_raw = post_content_raw[len(prefix):].strip()
+            
+            # Remove any titles, headers, or section labels in various formats
+            post_content_raw = re.sub(r'^\s*\[.*?\]\s*', '', post_content_raw, flags=re.MULTILINE)
+            post_content_raw = re.sub(r'^\s*Title:.*$', '', post_content_raw, flags=re.MULTILINE)
+            post_content_raw = re.sub(r'^\s*Paragraph \d+:?\s*', '', post_content_raw, flags=re.MULTILINE)
+            post_content_raw = re.sub(r'^\s*Introduction:?\s*', '', post_content_raw, flags=re.MULTILINE)
+            post_content_raw = re.sub(r'^\s*Conclusion:?\s*', '', post_content_raw, flags=re.MULTILINE)
+            post_content_raw = re.sub(r'^\s*Hashtags:?\s*', '', post_content_raw, flags=re.MULTILINE)
+            
+            # Remove any bullet points or numbered lists
+            post_content_raw = re.sub(r'^\s*[-•*]\s+', '', post_content_raw, flags=re.MULTILINE)
+            post_content_raw = re.sub(r'^\s*\d+[.)\]]\s+', '', post_content_raw, flags=re.MULTILINE)
+            
+            # Remove any trailing explanations or notes
+            explanation_patterns = [
+                r'\n\s*Note:.*$',
+                r'\n\s*This post.*$', 
+                r'\n\s*The above.*$',
+                r'\n\s*I hope.*$',
+                r'\n\s*Feel free.*$'
+            ]
+            for pattern in explanation_patterns:
+                post_content_raw = re.sub(pattern, '', post_content_raw, flags=re.DOTALL)
+            
+            # Process hashtags to ensure they're lowercase and properly formatted
+            lines = post_content_raw.split('\n')
+            processed_lines = []
+            
+            for line in lines:
+                if any(word.startswith('#') for word in line.split()):
+                    # This is a hashtag line
+                    words = []
+                    for word in line.split():
+                        if word.startswith('#'):
+                            # Convert hashtag to lowercase
+                            words.append(word.lower())
+                        else:
+                            words.append(word)
+                    processed_lines.append(' '.join(words))
+                else:
+                    processed_lines.append(line)
+            
+            # Remove consecutive blank lines
+            cleaned_lines = []
+            prev_blank = False
+            for line in processed_lines:
+                is_blank = not line.strip()
+                if not (is_blank and prev_blank):
+                    cleaned_lines.append(line)
+                prev_blank = is_blank
+                
+            post_content = '\n'.join(cleaned_lines).strip()
         else:
             post_content = ""
 
