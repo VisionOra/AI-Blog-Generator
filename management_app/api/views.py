@@ -10,6 +10,7 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiRespon
 import logging
 from django.utils import timezone
 from datetime import datetime
+import re
 
 # Import models
 from .models import BlogGeneral, BlogAiNews, LinkedinPost, ImageGeneration, TrendingTopics
@@ -49,25 +50,47 @@ from .serializers import (
         400: OpenApiResponse(response=ErrorResponseSerializer, description='Bad Request - Invalid input.'),
         500: OpenApiResponse(response=ErrorResponseSerializer, description='Internal Server Error.')
     },
-    description="Generate a detailed blog post based on the given topic and optional keywords."
+    description="Generate a detailed blog post based on the given topic and optional parameters for customization."
 )
 @api_view(['POST'])
 def generate_blog_api(request):
     """
-    Generate a detailed blog post from a given topic and optional keywords.
-    Input is a JSON object with "topic" (required) and "keywords" (optional).
+    Generate a detailed blog post from a given topic and optional parameters.
+    Input is a JSON object with "topic" (required) and various optional parameters
+    for customizing the blog format and style.
     """
     # Validate request data using the serializer
     serializer = BlogRequestSerializer(data=request.data)
     if serializer.is_valid():
         topic = serializer.validated_data['topic']
-        keywords = serializer.validated_data.get('keywords')
+        keywords = serializer.validated_data.get('keywords', [])
+        tone = serializer.validated_data.get('tone', 'professional')
+        length_min = serializer.validated_data.get('length_min', 800)
+        length_max = serializer.validated_data.get('length_max', 1500)
+        introduction = serializer.validated_data.get('introduction', True)
+        table_of_content = serializer.validated_data.get('table_of_content', False)
+        faq = serializer.validated_data.get('faq', False)
+        cta = serializer.validated_data.get('cta', False)
+        conclusion = serializer.validated_data.get('conclusion', True)
+        target_audience = serializer.validated_data.get('target_audience', [])
 
         try:
-            logger.info(f"Starting blog generation for topic: '{topic}' with keywords: '{keywords if keywords else 'None'}'")
+            logger.info(f"Starting blog generation for topic: '{topic}' with customized parameters")
             base_output_dir = settings.GENERATED_BLOGS_DIR
             
-            blog_writer_instance = BlogWriter(topic=topic, keywords=keywords)
+            blog_writer_instance = BlogWriter(
+                topic=topic, 
+                keywords=keywords,
+                tone=tone,
+                length_min=length_min,
+                length_max=length_max,
+                introduction=introduction,
+                table_of_content=table_of_content,
+                faq=faq,
+                cta=cta,
+                conclusion=conclusion,
+                target_audience=target_audience
+            )
             
             markdown_file_path = blog_writer_instance.save_blog_to_file(
                 topic=topic, output_file_name=None, base_output_dir=base_output_dir
@@ -102,8 +125,19 @@ def generate_blog_api(request):
                 logger.error(f"Error reading generated blog content or saving to database: {e}")
 
             response_data = {
-                'status': 'success', 'message': 'Blog generated successfully!',
-                'topic': topic, 'keywords': keywords if keywords else '',
+                'status': 'success', 
+                'message': 'Blog generated successfully!',
+                'topic': topic, 
+                'keywords': keywords,
+                'tone': tone,
+                'length_min': length_min,
+                'length_max': length_max,
+                'introduction': introduction,
+                'table_of_content': table_of_content,
+                'faq': faq,
+                'cta': cta,
+                'conclusion': conclusion,
+                'target_audience': target_audience,
                 'markdown_file': relative_md_path,
                 'content': blog_content
             }
@@ -245,20 +279,29 @@ def generate_image_api(request):
 
         try:
             logger.info(f"Starting image generation with prompt: '{final_prompt}'")
-            image_output_dir = os.path.join(settings.GENERATED_BLOGS_DIR, "api_generated_images")
-            os.makedirs(image_output_dir, exist_ok=True) 
+            image_output_dir = "api_generated_images"  # This is now just a prefix for S3
+            
+            # Generate image and get S3 URL
+            image_url = generate_image(prompt=final_prompt, output_dir=image_output_dir)
 
-            image_path = generate_image(prompt=final_prompt, output_dir=image_output_dir)
-
-            if image_path:
-                django_base_dir = settings.BASE_DIR
-                relative_image_path = os.path.relpath(image_path, django_base_dir).replace(os.sep, '/')
+            if image_url:
+                # Determine if the URL is an S3 URL or local path
+                is_s3_url = image_url.startswith('http')
+                
+                if not is_s3_url:
+                    # If it's a local path, convert to relative path for display
+                    django_base_dir = settings.BASE_DIR
+                    relative_image_path = os.path.relpath(image_url, django_base_dir).replace(os.sep, '/')
+                    image_url_for_db = relative_image_path
+                else:
+                    # Use the S3 URL directly
+                    image_url_for_db = image_url
                 
                 # Save to database
                 image_record = ImageGeneration(
                     user_id=1,  # Default user ID until authentication is implemented
                     prompt=final_prompt,
-                    image_url=relative_image_path,
+                    image_url=image_url_for_db,
                     created_at=timezone.now()
                 )
                 image_record.save()
@@ -268,13 +311,13 @@ def generate_image_api(request):
                     'status': 'success',
                     'message': 'Image generated successfully!',
                     'prompt_used': final_prompt,
-                    'image_file': relative_image_path
+                    'image_file': image_url_for_db
                 }
                 
                 # Serialize the successful response
                 response_serializer = ImageGenerationResponseSerializer(data=response_data)
                 if response_serializer.is_valid():
-                    logger.info(f"Successfully generated image at {image_path}")
+                    logger.info(f"Successfully generated image at {image_url}")
                     return Response(response_serializer.data, status=status.HTTP_200_OK)
                 else:
                     logger.error(f"Error serializing successful image response: {response_serializer.errors}")

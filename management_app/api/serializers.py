@@ -20,20 +20,91 @@ class ErrorResponseSerializer(serializers.Serializer):
 # Serializers for Blog Generation API
 class BlogRequestSerializer(serializers.Serializer):
     topic = serializers.CharField(
-        max_length=255, # Increased max_length slightly
+        max_length=255,
         help_text="The main topic for the blog post."
     )
-    keywords = serializers.CharField(
-        required=False, 
-        allow_blank=True, 
-        help_text="Optional comma-separated keywords to guide blog generation."
+    keywords = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        default=list,
+        help_text="Optional keywords to guide blog generation."
     )
+    tone = serializers.ChoiceField(
+        choices=["professional", "creative", "casual", "informative", "persuasive"],
+        required=False,
+        default="professional",
+        help_text="The tone of the blog post."
+    )
+    length_min = serializers.IntegerField(
+        required=False,
+        default=800,
+        min_value=300,
+        max_value=5000,
+        help_text="Minimum word count for the blog post."
+    )
+    length_max = serializers.IntegerField(
+        required=False,
+        default=1500,
+        min_value=500,
+        max_value=10000,
+        help_text="Maximum word count for the blog post."
+    )
+    introduction = serializers.BooleanField(
+        required=False,
+        default=True,
+        help_text="Whether to include an introduction section."
+    )
+    table_of_content = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text="Whether to include a table of contents."
+    )
+    faq = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text="Whether to include a FAQ section."
+    )
+    cta = serializers.BooleanField(
+        required=False,
+        default=False,
+        help_text="Whether to include a call to action section."
+    )
+    conclusion = serializers.BooleanField(
+        required=False,
+        default=True,
+        help_text="Whether to include a conclusion section."
+    )
+    target_audience = serializers.ListField(
+        child=serializers.CharField(),
+        required=False,
+        default=list,
+        help_text="Optional target audience specifications."
+    )
+    
+    # Add validation to ensure length_min is less than length_max
+    def validate(self, data):
+        length_min = data.get('length_min', 800)
+        length_max = data.get('length_max', 1500)
+        
+        if length_min >= length_max:
+            raise serializers.ValidationError("length_min must be less than length_max")
+            
+        return data
 
 class BlogResponseSerializer(serializers.Serializer):
     status = serializers.CharField()
     message = serializers.CharField()
     topic = serializers.CharField()
-    keywords = serializers.CharField(allow_blank=True) # Allow blank if keywords were not provided
+    keywords = serializers.ListField(child=serializers.CharField(), required=False, default=list)
+    tone = serializers.CharField(required=False)
+    length_min = serializers.IntegerField(required=False)
+    length_max = serializers.IntegerField(required=False)
+    introduction = serializers.BooleanField(required=False)
+    table_of_content = serializers.BooleanField(required=False)
+    faq = serializers.BooleanField(required=False)
+    cta = serializers.BooleanField(required=False)
+    conclusion = serializers.BooleanField(required=False)
+    target_audience = serializers.ListField(child=serializers.CharField(), required=False, default=list)
     markdown_file = serializers.CharField()
     content = serializers.CharField()
 

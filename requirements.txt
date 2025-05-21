@@ -23,6 +23,8 @@ pytest>=7.4.0
 pytest-django>=4.5.2
 # For image handling
 Pillow>=10.0.0
+# For AWS S3 integration
+boto3>=1.28.0
 # Add any other specific versions if necessary 
 pytrends>=4.9.2
 pandas>=2.0.0
