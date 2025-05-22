@@ -4,6 +4,8 @@ from django.utils import timezone
 
 class BlogGeneral(models.Model):
     user_id = models.IntegerField()
+    username = models.CharField(max_length=150, default='')
+    email = models.EmailField(default='')
     topic = models.CharField(max_length=255)
     content = models.TextField()
     created_at = models.DateTimeField(default=timezone.now)
@@ -14,6 +16,8 @@ class BlogGeneral(models.Model):
 
 class BlogAiNews(models.Model):
     news_week_start = models.DateField()
+    username = models.CharField(max_length=150, default='')
+    email = models.EmailField(default='')
     summary = models.TextField()
     content = models.TextField()
     created_at = models.DateTimeField(default=timezone.now)
@@ -24,6 +28,8 @@ class BlogAiNews(models.Model):
 
 class LinkedinPost(models.Model):
     user_id = models.IntegerField()
+    username = models.CharField(max_length=150, default='')
+    email = models.EmailField(default='')
     topic = models.CharField(max_length=255)
     content = models.TextField()
     created_at = models.DateTimeField(default=timezone.now)
@@ -34,6 +40,8 @@ class LinkedinPost(models.Model):
 
 class ImageGeneration(models.Model):
     user_id = models.IntegerField()
+    username = models.CharField(max_length=150, default='')
+    email = models.EmailField(default='')
     prompt = models.TextField()
     image_url = models.URLField(max_length=500)
     created_at = models.DateTimeField(default=timezone.now)

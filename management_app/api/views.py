@@ -3,7 +3,9 @@ import os
 import sys
 from django.conf import settings
 from django.http import HttpResponse
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework.response import Response
 from rest_framework import status
 from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiResponse
@@ -53,6 +55,7 @@ from .serializers import (
     description="Generate a detailed blog post based on the given topic and optional parameters for customization."
 )
 @api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def generate_blog_api(request):
     """
     Generate a detailed blog post from a given topic and optional parameters.
@@ -113,7 +116,9 @@ def generate_blog_api(request):
                         
                     # Save to database
                     blog = BlogGeneral(
-                        user_id=1,  # Default user ID until authentication is implemented
+                        user_id=request.user.id,  # Use authenticated user's ID
+                        username=request.user.username, # Use authenticated user's username
+                        email=request.user.email, # Use authenticated user's email
                         topic=topic,
                         content=blog_content,
                         created_at=timezone.now()
@@ -170,6 +175,7 @@ def generate_blog_api(request):
     responses={200: None}
 )
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def generate_weekly_news_blog(request):
     """
     Generate a weekly news blog about the latest trends and developments.
@@ -216,6 +222,8 @@ def generate_weekly_news_blog(request):
                 # Save to database
                 news_blog = BlogAiNews(
                     news_week_start=datetime.now().date(),
+                    username=request.user.username, # Use authenticated user's username
+                    email=request.user.email, # Use authenticated user's email
                     summary=topic,  # Using the topic as a summary
                     content=blog_content,
                     created_at=timezone.now()
@@ -255,96 +263,62 @@ def generate_weekly_news_blog(request):
     description="Generate an image based on a prompt and/or keywords using DALL-E 3."
 )
 @api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def generate_image_api(request):
     """
-    Generates an image using DALL-E 3 based on a provided prompt and/or keywords.
-    Input is a JSON object with optional "prompt" and "keywords" fields.
-    At least one of "prompt" or "keywords" must be provided.
+    Generate an image based on a prompt and/or keywords using DALL-E 3.
     """
-    # Validate request data using the serializer
     serializer = ImageGenerationRequestSerializer(data=request.data)
-    if serializer.is_valid():
-        prompt = serializer.validated_data.get('prompt')
-        keywords = serializer.validated_data.get('keywords')
-
-        # Construct the final prompt for the image generation model
-        final_prompt = ""
-        if prompt and keywords:
-            final_prompt = f"{prompt} - Keywords: {keywords}"
-        elif prompt:
-            final_prompt = prompt
-        elif keywords:
-            final_prompt = f"Generate an image based on the following keywords: {keywords}"
-        # The serializer's validate method already ensures final_prompt won't be empty
-
-        try:
-            logger.info(f"Starting image generation with prompt: '{final_prompt}'")
-            image_output_dir = "api_generated_images"  # This is now just a prefix for S3
-            
-            # Generate image and get S3 URL and optimized prompt
-            image_result = generate_image(prompt=final_prompt, output_dir=image_output_dir)
-            
-            # Unpack the result tuple (image_url, optimized_prompt)
-            if isinstance(image_result, tuple) and len(image_result) == 2:
-                image_url, enhanced_prompt = image_result
-            else:
-                # Handle legacy function calls that might not return a tuple
-                image_url = image_result
-                enhanced_prompt = final_prompt
-
-            if image_url:
-                # Determine if the URL is an S3 URL or local path
-                is_s3_url = image_url.startswith('http')
-                
-                if not is_s3_url:
-                    # If it's a local path, convert to relative path for display
-                    django_base_dir = settings.BASE_DIR
-                    relative_image_path = os.path.relpath(image_url, django_base_dir).replace(os.sep, '/')
-                    image_url_for_db = relative_image_path
-                else:
-                    # Use the S3 URL directly
-                    image_url_for_db = image_url
-                
-                # Save to database
-                image_record = ImageGeneration(
-                    user_id=1,  # Default user ID until authentication is implemented
-                    prompt=final_prompt,
-                    image_url=image_url_for_db,
-                    created_at=timezone.now()
-                )
-                image_record.save()
-                logger.info(f"Saved image generation record to database with ID: {image_record.id}")
-                
-                response_data = {
-                    'status': 'success',
-                    'message': 'Image generated successfully!',
-                    'prompt_used': final_prompt,
-                    'enhanced_prompt': enhanced_prompt,
-                    'image_file': image_url_for_db
-                }
-                
-                # Serialize the successful response
-                response_serializer = ImageGenerationResponseSerializer(data=response_data)
-                if response_serializer.is_valid():
-                    logger.info(f"Successfully generated image at {image_url}")
-                    return Response(response_serializer.data, status=status.HTTP_200_OK)
-                else:
-                    logger.error(f"Error serializing successful image response: {response_serializer.errors}")
-                    return Response({'error': 'Internal server error during response serialization.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-            else:
-                logger.error(f"Image generation failed for prompt: '{final_prompt}'")
-                # Using the ErrorResponseSerializer structure might be better here
-                return Response({'error': 'Image generation failed. Check server logs for details.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-        except Exception as e:
-            logger.error(f"Unexpected error in image generation API: {type(e).__name__} - {e}")
-            import traceback
-            traceback.print_exc()
-            return Response({'error': f'An unexpected error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    else:
-        # If serializer validation fails
+    if not serializer.is_valid():
         logger.warning(f"Invalid input for image generation: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    prompt = serializer.validated_data.get('prompt', '')
+    keywords = serializer.validated_data.get('keywords', [])
+    aspect_ratio = serializer.validated_data.get('aspect_ratio', '1024x1024') 
+    size = serializer.validated_data.get('size', '1024x1024')
+
+    logger.info(f"Received image generation request for prompt: '{prompt}' with keywords: {keywords}, aspect_ratio: {aspect_ratio}, size: {size}")
+
+    final_prompt = prompt
+    if keywords:
+        final_prompt += " " + " ".join(keywords)
+
+    try:
+        image_data = generate_image(prompt=final_prompt, keywords=keywords, aspect_ratio=aspect_ratio, size=size)
+        image_url_for_db = image_data.get('url')
+
+        if image_url_for_db:
+            # Save to database
+            image_record = ImageGeneration(
+                user_id=request.user.id, 
+                username=request.user.username, 
+                email=request.user.email, 
+                prompt=final_prompt,
+                image_url=image_url_for_db,
+                created_at=timezone.now()
+            )
+            image_record.save()
+            logger.info(f"Saved image generation details for prompt: '{final_prompt}'")
+            
+            response_serializer = ImageGenerationResponseSerializer(data={'prompt': final_prompt, 'image_url': image_url_for_db})
+            if response_serializer.is_valid():
+                return Response(response_serializer.data, status=status.HTTP_200_OK)
+            else:
+                logger.error(f"Error serializing successful response for image generation: {response_serializer.errors}")
+                return Response({'error': 'Internal server error during response serialization.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        else:
+            logger.error(f"Image generation failed for prompt: '{final_prompt}'. No URL returned.")
+            return Response({'error': 'Image generation failed. Please try again.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    except ValueError as e:
+        logger.error(f"Error in image generation: {str(e)}")
+        return Response({'error': f'An error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception as e:
+        logger.error(f"Unexpected error in image generation: {type(e).__name__} - {e}")
+        import traceback
+        traceback.print_exc()
+        return Response({'error': f'An unexpected error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @extend_schema(
     request=LinkedInPostRequestSerializer,
@@ -356,6 +330,7 @@ def generate_image_api(request):
     description="Generate a professional LinkedIn post based on the given topic."
 )
 @api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def generate_linkedin_post_api(request):
     """
     Generates a professional LinkedIn post for a given topic.
@@ -376,7 +351,9 @@ def generate_linkedin_post_api(request):
             if linkedin_post_content:
                 # Save to database
                 linkedin_post = LinkedinPost(
-                    user_id=1,  # Default user ID until authentication is implemented
+                    user_id=request.user.id,  # Use authenticated user's ID
+                    username=request.user.username, # Use authenticated user's username
+                    email=request.user.email, # Use authenticated user's email
                     topic=topic,
                     content=linkedin_post_content,
                     created_at=timezone.now()
@@ -432,6 +409,7 @@ def generate_linkedin_post_api(request):
     description="Fetch topics related to a given keyword using Google Trends data and save to database."
 )
 @api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def fetch_and_save_related_topics(request):
     """
     Fetches topics related to a given keyword using Google Trends and saves to database.
